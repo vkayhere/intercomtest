@@ -1,206 +1,157 @@
-let timer;
-let seconds = 0;
-let gameStarted = false;
-let originalBoard = [];
-let solution = [];
-let hintsUsed = 0;
-const MAX_HINTS = 3; // Maximum number of hints allowed per game
+const board = document.getElementById('board');
+const cells = document.querySelectorAll('[data-cell]');
+const message = document.getElementById('message');
+const restartButton = document.getElementById('restartButton');
 
-// Generate a valid Sudoku solution
-function generateSolution() {
-    const basePattern = [
-        [1, 2, 3, 4, 5, 6, 7, 8, 9],
-        [4, 5, 6, 7, 8, 9, 1, 2, 3],
-        [7, 8, 9, 1, 2, 3, 4, 5, 6],
-        [2, 1, 4, 3, 6, 5, 8, 9, 7],
-        [3, 6, 5, 8, 9, 7, 2, 1, 4],
-        [8, 9, 7, 2, 1, 4, 3, 6, 5],
-        [5, 3, 1, 6, 4, 2, 9, 7, 8],
-        [6, 4, 2, 9, 7, 8, 5, 3, 1],
-        [9, 7, 8, 5, 3, 1, 6, 4, 2]
-    ];
-    return basePattern;
-}
+const PLAYER_X = 'x';
+const COMPUTER_O = 'o';
 
-// Generate an easy puzzle from the solution
-function generatePuzzle() {
-    // First, get a complete solution
-    solution = generateSolution();
-    
-    // Create a copy for the puzzle
-    let puzzle = solution.map(row => [...row]);
-    
-    // Define positions to keep (for an easy puzzle, we'll keep around 35-40 numbers)
-    const cellsToRemove = 45; // This will leave 36 numbers (81 - 45 = 36)
-    
-    // Remove numbers randomly
-    let removed = 0;
-    while (removed < cellsToRemove) {
-        const row = Math.floor(Math.random() * 9);
-        const col = Math.floor(Math.random() * 9);
-        
-        if (puzzle[row][col] !== 0) {
-            puzzle[row][col] = 0;
-            removed++;
-        }
-    }
-    
-    return puzzle;
-}
+let gameActive = true;
 
-function isValid(board, row, col, num) {
-    // Check row
-    for (let x = 0; x < 9; x++) {
-        if (board[row][x] === num) return false;
-    }
-    
-    // Check column
-    for (let x = 0; x < 9; x++) {
-        if (board[x][col] === num) return false;
-    }
-    
-    // Check 3x3 box
-    const startRow = row - row % 3;
-    const startCol = col - col % 3;
-    for (let i = 0; i < 3; i++) {
-        for (let j = 0; j < 3; j++) {
-            if (board[i + startRow][j + startCol] === num) return false;
-        }
-    }
-    
-    return true;
-}
+const snarkyMessages = [
+    "Ha! Better luck next time, human!",
+    "Robots: 1, Humans: 0. Just saying...",
+    "Did you even try?",
+    "Maybe stick to rock, paper, scissors?",
+    "AI supremacy confirmed!",
+    "Was that your best move? Really?",
+    "Even a random number generator could do better!"
+];
 
-function createBoard() {
-    const board = document.getElementById('board');
-    board.innerHTML = '';
-    const puzzle = generatePuzzle();
-    originalBoard = JSON.parse(JSON.stringify(puzzle));
+const winningCombinations = [
+    [0, 1, 2], [3, 4, 5], [6, 7, 8], // Rows
+    [0, 3, 6], [1, 4, 7], [2, 5, 8], // Columns
+    [0, 4, 8], [2, 4, 6] // Diagonals
+];
 
-    for (let i = 0; i < 9; i++) {
-        for (let j = 0; j < 9; j++) {
-            const cell = document.createElement('div');
-            cell.className = 'cell';
-            cell.dataset.row = i;
-            cell.dataset.col = j;
-            
-            if (puzzle[i][j] !== 0) {
-                cell.textContent = puzzle[i][j];
-                cell.classList.add('given');
-            } else {
-                const input = document.createElement('input');
-                input.type = 'number';
-                input.min = '1';
-                input.max = '9';
-                input.addEventListener('input', (e) => {
-                    // Validate input
-                    if (e.target.value && (e.target.value < 1 || e.target.value > 9)) {
-                        e.target.value = '';
-                    }
-                    checkWin();
-                });
-                cell.appendChild(input);
-            }
-            
-            board.appendChild(cell);
-        }
-    }
-}
-
-function updateTimer() {
-    seconds++;
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-    document.getElementById('timer').textContent = 
-        `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
-}
+startGame();
 
 function startGame() {
-    if (gameStarted) return;
-    
-    gameStarted = true;
-    seconds = 0;
-    hintsUsed = 0;
-    createBoard();
-    timer = setInterval(updateTimer, 1000);
-    document.getElementById('start-btn').textContent = 'Game in Progress';
-    document.getElementById('hint-btn').disabled = false;
-    document.getElementById('message').textContent = '';
+    gameActive = true;
+    cells.forEach(cell => {
+        cell.classList.remove(PLAYER_X);
+        cell.classList.remove(COMPUTER_O);
+        cell.removeEventListener('click', handleClick);
+        cell.addEventListener('click', handleClick, { once: true });
+    });
+    message.textContent = "Your turn! (X)";
 }
 
-function getHint() {
-    if (!gameStarted || hintsUsed >= MAX_HINTS) return;
+function handleClick(e) {
+    if (!gameActive) return;
 
-    // Find an empty cell or incorrect number
-    const cells = document.querySelectorAll('.cell');
-    const emptyCells = Array.from(cells).filter(cell => {
-        const row = parseInt(cell.dataset.row);
-        const col = parseInt(cell.dataset.col);
-        const input = cell.querySelector('input');
-        
-        if (!input) return false; // Skip given numbers
-        
-        const currentValue = input.value ? parseInt(input.value) : 0;
-        return currentValue !== solution[row][col];
-    });
+    const cell = e.target;
+    if (cell.classList.contains(PLAYER_X) || cell.classList.contains(COMPUTER_O)) return;
 
-    if (emptyCells.length === 0) return;
+    // Player's move
+    cell.classList.add(PLAYER_X);
 
-    // Randomly select an empty cell
-    const randomCell = emptyCells[Math.floor(Math.random() * emptyCells.length)];
-    const row = parseInt(randomCell.dataset.row);
-    const col = parseInt(randomCell.dataset.col);
-    
-    // Fill in the correct number
-    const input = randomCell.querySelector('input');
-    input.value = solution[row][col];
-    input.classList.add('hinted');
-    
-    hintsUsed++;
-    
-    // Update hint button status
-    const hintBtn = document.getElementById('hint-btn');
-    hintBtn.textContent = `Get Hint (${MAX_HINTS - hintsUsed} left)`;
-    if (hintsUsed >= MAX_HINTS) {
-        hintBtn.disabled = true;
+    if (checkWin(PLAYER_X)) {
+        endGame(true);
+        return;
     }
 
-    // Check if puzzle is solved
-    checkWin();
+    if (isDraw()) {
+        endGame(false);
+        return;
+    }
+
+    // Computer's move
+    gameActive = false;
+    message.textContent = "Computer is thinking...";
+    
+    setTimeout(() => {
+        computerMove();
+        
+        if (checkWin(COMPUTER_O)) {
+            endGame(false);
+            return;
+        }
+
+        if (isDraw()) {
+            endGame(false);
+            return;
+        }
+
+        gameActive = true;
+        message.textContent = "Your turn! (X)";
+    }, 500);
 }
 
-function checkWin() {
-    const cells = document.querySelectorAll('.cell');
-    let complete = true;
-    
-    cells.forEach(cell => {
-        const row = parseInt(cell.dataset.row);
-        const col = parseInt(cell.dataset.col);
-        const input = cell.querySelector('input');
+function computerMove() {
+    // Try to win
+    const winningMove = findBestMove(COMPUTER_O);
+    if (winningMove !== -1) {
+        cells[winningMove].classList.add(COMPUTER_O);
+        return;
+    }
+
+    // Block player's winning move
+    const blockingMove = findBestMove(PLAYER_X);
+    if (blockingMove !== -1) {
+        cells[blockingMove].classList.add(COMPUTER_O);
+        return;
+    }
+
+    // Take center if available
+    if (!cells[4].classList.contains(PLAYER_X) && !cells[4].classList.contains(COMPUTER_O)) {
+        cells[4].classList.add(COMPUTER_O);
+        return;
+    }
+
+    // Take random available cell
+    const availableCells = [...cells].filter(
+        cell => !cell.classList.contains(PLAYER_X) && !cell.classList.contains(COMPUTER_O)
+    );
+    const randomCell = availableCells[Math.floor(Math.random() * availableCells.length)];
+    randomCell.classList.add(COMPUTER_O);
+}
+
+function findBestMove(player) {
+    for (const combination of winningCombinations) {
+        const [a, b, c] = combination;
+        const cellsInCombo = [cells[a], cells[b], cells[c]];
         
-        if (input) {
-            const value = input.value ? parseInt(input.value) : 0;
-            if (!value || value !== solution[row][col]) {
-                complete = false;
-            }
+        const playerCells = cellsInCombo.filter(cell => cell.classList.contains(player));
+        const emptyCells = cellsInCombo.filter(cell => 
+            !cell.classList.contains(PLAYER_X) && !cell.classList.contains(COMPUTER_O)
+        );
+
+        if (playerCells.length === 2 && emptyCells.length === 1) {
+            return combination[cellsInCombo.indexOf(emptyCells[0])];
         }
+    }
+    return -1;
+}
+
+function checkWin(player) {
+    return winningCombinations.some(combination => {
+        return combination.every(index => {
+            return cells[index].classList.contains(player);
+        });
     });
-    
-    if (complete) {
-        clearInterval(timer);
-        gameStarted = false;
-        document.getElementById('start-btn').textContent = 'Play Again';
-        document.getElementById('hint-btn').disabled = true;
-        document.getElementById('message').textContent = 
-            `Congratulations! You solved the puzzle! (${hintsUsed} hints used)`;
-        
+}
+
+function isDraw() {
+    return [...cells].every(cell => {
+        return cell.classList.contains(PLAYER_X) || cell.classList.contains(COMPUTER_O);
+    });
+}
+
+function endGame(playerWon) {
+    gameActive = false;
+    if (playerWon) {
+        message.textContent = "Congratulations! You won!";
         confetti({
             particleCount: 100,
             spread: 70,
             origin: { y: 0.6 }
         });
+    } else if (isDraw()) {
+        message.textContent = "It's a draw!";
+    } else {
+        message.textContent = snarkyMessages[Math.floor(Math.random() * snarkyMessages.length)];
     }
 }
 
-document.getElementById('start-btn').addEventListener('click', startGame);
-document.getElementById('hint-btn').addEventListener('click', getHint); 
+restartButton.addEventListener('click', startGame); 
